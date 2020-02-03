@@ -1,0 +1,11 @@
+variables.json
+*.tfstate
+*.tfstate.*.backup
+*.tfstate.backup
+*.tfvars
+.terraform/
+*.retry
+inventory.gcp.yml
+jdauphant.nginx
+vault.key
+docker-267008-ef7b2c7071f9.json

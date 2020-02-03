@@ -1,0 +1,11 @@
+---
+plugin: gcp_compute
+projects:
+  - docker-NUMBER
+zones:
+  - "europe-west1-b"
+filters: []
+auth_kind: serviceaccount
+service_account_file: "./docker-267008-ef7b2c7071f9.json"
+groups:
+  docker: "'docker' in name"

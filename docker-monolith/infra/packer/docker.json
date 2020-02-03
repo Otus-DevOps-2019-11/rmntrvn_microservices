@@ -1,0 +1,32 @@
+{
+   "variables": {
+        "project_id": null,
+        "source_image_family": null,
+        "machine_type": "f1-micro"
+    },
+    "builders": [
+        {
+            "type": "googlecompute",
+            "project_id": "{{user `project_id`}}",
+            "image_name": "docker-reddit-base-{{timestamp}}",
+            "image_family": "docker-reddit-base",
+            "source_image_family": "{{user `source_image_family`}}",
+            "disk_size": "{{user `disk_size`}}",
+            "disk_type": "{{user `disk_type`}}",
+            "image_description": "{{user `image_with_docker`}}",
+            "network": "{{user `network`}}",
+            "tags": "{{user `tag`}}",
+            "zone": "europe-west1-b",
+            "ssh_username": "rmntrvn",
+            "machine_type": "{{user `machine_type`}}"
+        }
+    ],
+    "provisioners": [
+        {
+        "type": "ansible",
+        "playbook_file": "../ansible/playbook/packer_docker.yml",
+        "ansible_env_vars": ["ANSIBLE_ROLES_PATH={{ pwd }}/ansible/roles"],
+        "extra_arguments": [ "-vvvv" ]
+        }
+    ]
+}

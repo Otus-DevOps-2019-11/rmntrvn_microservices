@@ -1,0 +1,9 @@
+{
+  "project_id": "example project_id",
+  "source_image_family": "example source_image_family",
+  "disk_size": "10",
+  "disk_type": "example disk_type",
+  "image_description": "examaple description",
+  "network": "example network",
+  "tag": "example tag"
+}

@@ -1,0 +1,5 @@
+project          = "docker-number"
+public_key_path  = "~/.ssh/rmntrvn.pub"
+disk_image       = "reddit-docker"
+private_key_path = "~/.ssh/id_rsa"
+instances = 2
