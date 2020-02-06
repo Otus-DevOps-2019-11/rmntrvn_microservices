@@ -290,7 +290,7 @@ docker run -d --network=reddit --network-alias=comment rmntrvn/comment:1.0
 
 docker run -d --network=reddit -p 9292:9292 rmntrvn/ui:2.0
 ```
-После чего проверяем, что пост не удалился.
+После чего проверяем, что пост не удалился. База данных сохранилась на хостовой машине в директории `/var/lib/docker/volumes/reddit_db/_data`.
 
 ---
 
