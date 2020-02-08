@@ -1,6 +1,281 @@
 # rmntrvn_microservices
 rmntrvn microservices repository
 
+## Домашняя работа 15 "Сетевое взаимодействие Docker контейнеров. Docker Compose. Тестирование образов"
+
+1. Создан Docker host:
+Экспортирован проект.
+```
+export GOOGLE_PROJECT=docker-267008
+```
+```
+docker-machine create --driver google \
+--google-machine-image https://www.googleapis.com/compute/v1/projects/ubuntu-os-cloud/global/images/ubuntu-1604-xenial-v20200129 \
+--google-machine-type n1-standard-1 \
+--google-zone europe-west1-b \
+docker-host
+```
+Создано окружение для дальнейшей работы с Docker:
+```
+eval $(docker-machine env docker-host)
+```
+
+2. Запустим контейнер с сетью *none*.
+```
+docker run -ti --rm --network none joffotron/docker-net-tools -c ifconfig
+Status: Downloaded newer image for joffotron/docker-net-tools:latest
+lo        Link encap:Local Loopback
+          inet addr:127.0.0.1  Mask:255.0.0.0
+          UP LOOPBACK RUNNING  MTU:65536  Metric:1
+          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:1000
+          RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+```
+Видим, что в контейнере из сетевых интерфейсов только loopback интерфейс. Данный тип сети используется для тестирования и запуска одноразовых контейнеров.
+Запустии контейнер в сетевом пространстве docker-хоста.
+```
+docker run -ti --rm --network host joffotron/docker-net-tools -c ifconfig
+docker0   Link encap:Ethernet  HWaddr 02:42:9F:01:74:67
+          inet addr:172.17.0.1  Bcast:172.17.255.255  Mask:255.255.0.0
+          UP BROADCAST MULTICAST  MTU:1500  Metric:1
+          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:0
+          RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+
+ens4      Link encap:Ethernet  HWaddr 42:01:0A:84:00:1B
+          inet addr:10.132.0.27  Bcast:10.132.0.27  Mask:255.255.255.255
+          inet6 addr: fe80::4001:aff:fe84:1b%32538/64 Scope:Link
+          UP BROADCAST RUNNING MULTICAST  MTU:1460  Metric:1
+          RX packets:4726 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:3761 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:1000
+          RX bytes:109018116 (103.9 MiB)  TX bytes:393229 (384.0 KiB)
+
+lo        Link encap:Local Loopback
+          inet addr:127.0.0.1  Mask:255.0.0.0
+          inet6 addr: ::1%32538/128 Scope:Host
+          UP LOOPBACK RUNNING  MTU:65536  Metric:1
+          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:1000
+          RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+```
+Сравним с сетевыми интерфейсами docker-хоста.
+```
+$ docker-machine ssh docker-host ifconfig
+docker0   Link encap:Ethernet  HWaddr 02:42:9f:01:74:67
+          inet addr:172.17.0.1  Bcast:172.17.255.255  Mask:255.255.0.0
+          UP BROADCAST MULTICAST  MTU:1500  Metric:1
+          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:0
+          RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+
+ens4      Link encap:Ethernet  HWaddr 42:01:0a:84:00:1b
+          inet addr:10.132.0.27  Bcast:10.132.0.27  Mask:255.255.255.255
+          inet6 addr: fe80::4001:aff:fe84:1b/64 Scope:Link
+          UP BROADCAST RUNNING MULTICAST  MTU:1460  Metric:1
+          RX packets:4764 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:3802 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:1000
+          RX bytes:109026757 (109.0 MB)  TX bytes:401326 (401.3 KB)
+
+lo        Link encap:Local Loopback
+          inet addr:127.0.0.1  Mask:255.0.0.0
+          inet6 addr: ::1/128 Scope:Host
+          UP LOOPBACK RUNNING  MTU:65536  Metric:1
+          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:1000
+          RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+```
+Запустим несколько раз контейнер Nginx (запущен 3 раза).
+```
+docker run --network host -d nginx
+```
+В итоге был запущен только 1 контейнер.
+Остановим все контейнеры.
+```
+docker kill $(docker ps -q)
+```
+Подключимся к серверу docker-host по ssh.
+```
+docker-machine ssh docker-host
+```
+Создадим символьную ссылку.
+```
+sudo ln -s /var/run/docker/netns /var/run/netns
+```
+Теперь можем проверить существующие net-namespaces.
+```
+sudo ip netns
+```
+Снова создадим контейнер с сетью none и проверить существующие net-namespaces.
+```
+docker-user@docker-host:~$ sudo ip netns
+RTNETLINK answers: Invalid argument
+RTNETLINK answers: Invalid argument
+75756d5fe471
+default
+```
+Создадим контейнер с сетью host и проверим существующие net-namespaces.
+```
+docker-user@docker-host:~$ sudo ip netns
+default
+```
+Итог: сеть none - изолирована, сеть host наследуюется от хостовой машины.
+Создадим контейнер с сетью bridge:
+```
+docker network create reddit --driver bridge
+```
+Запустим проект с использованием bridge сети. Сначала соберем образы.
+```
+docker build -t rmntrvn/post:1.0 ./post-py
+docker build -t rmntrvn/comment:1.0 ./comment
+docker build -t rmntrvn/ui:1.0 ./ui
+```
+Поднемем контейнеры.
+```
+docker run -d --network=reddit mongo:latest
+docker run -d --network=reddit rmntrvn/post:1.0
+docker run -d --network=reddit rmntrvn/comment:1.0
+docker run -d --network=reddit -p 9292:9292 rmntrvn/ui:1.0
+```
+При проверке наблюдаем, что сервисы не могут определить друг друга. Необходимо назначить сетевые алиасы для контейнеров. Останавливаем старые копии контейнеров.
+```
+docker kill $(docker ps -q)
+```
+Запускаем новые с указанием алисов.
+```
+docker run -d --network=reddit --network-alias=post_db --network-alias=comment_db mongo:latest
+docker run -d --network=reddit --network-alias=post rmntrvn/post:1.0
+docker run -d --network=reddit --network-alias=comment rmntrvn/comment:1.0
+docker run -d --network=reddit -p 9292:9292 rmntrvn/ui:1.0
+```
+После чего убеждаемся, что проект работает.
+Теперь запустим проект в 2-х bridge-сетях. Остановим все контейнеры.
+```
+docker kill $(docker ps -q)
+```
+Создадим сети.
+```
+docker network create back_net --subnet=10.0.2.0/24
+docker network create front_net --subnet=10.0.1.0/24
+```
+Запустим контейнеры.
+```
+docker run -d --network=front_net -p 9292:9292 --name ui  rmntrvn/ui:1.0
+docker run -d --network=back_net --name comment  rmntrvn/comment:1.0
+docker run -d --network=back_net --name post  rmntrvn/post:1.0
+docker run -d --network=back_net --name mongo_db --network-alias=post_db --network-alias=comment_db mongo:latest
+```
+Убеждаемся, что сервисы приложения не работают, т.к. при инициализации контейнера ему может быть присвоена только 1 сеть. Необходимо поместить контейнеры post и comment в обе сети.
+```
+docker network connect front_net post
+docker network connect front_net comment
+```
+После чего убеждаемся, что работа сервисов восстановлена.
+
+3. Рассмотрим как выглядит сетевой стек.
+Подключимся к docker-host по ssh.
+```
+docker-machine ssh docker-host
+```
+Установим утилиту для работы с мостами.
+```
+sudo apt-get update && sudo apt-get install bridge-utils
+```
+Выполним следующую команду.
+```
+docker network ls
+NETWORK ID          NAME                DRIVER              SCOPE
+fd2b748bf0f4        back_net            bridge              local
+da120c291e3a        bridge              bridge              local
+a3d1e2b46dcf        front_net           bridge              local
+40c9737df49b        host                host                local
+1e518a7f99a2        none                null                local
+2a0cdd4d6daf        reddit              bridge              local
+```
+Выполним следующую команду.
+```
+ifconfig | grep br
+br-2a0cdd4d6daf Link encap:Ethernet  HWaddr 02:42:ad:5d:c5:2e
+br-a3d1e2b46dcf Link encap:Ethernet  HWaddr 02:42:ff:ca:96:f4
+br-fd2b748bf0f4 Link encap:Ethernet  HWaddr 02:42:e3:3f:47:52
+```
+Просмотрим информацию о любом из интерфейсов br.
+```
+docker-user@docker-host:~$ brctl show br-fd2b748bf0f4
+bridge name	bridge id		STP enabled	interfaces
+br-fd2b748bf0f4		8000.0242e33f4752	no		veth81635ea
+							vetha22cc60
+							vethe7b0dd5
+```
+В данном примере отображены пары, которые участвуют в образовании моста.
+Проверим правила iptables.
+```
+sudo iptables -nL -t nat
+Chain PREROUTING (policy ACCEPT)
+target     prot opt source               destination
+DOCKER     all  --  0.0.0.0/0            0.0.0.0/0            ADDRTYPE match dst-type LOCAL
+
+Chain INPUT (policy ACCEPT)
+target     prot opt source               destination
+
+Chain OUTPUT (policy ACCEPT)
+target     prot opt source               destination
+DOCKER     all  --  0.0.0.0/0           !127.0.0.0/8          ADDRTYPE match dst-type LOCAL
+
+Chain POSTROUTING (policy ACCEPT)
+target     prot opt source               destination
+MASQUERADE  all  --  10.0.1.0/24          0.0.0.0/0
+MASQUERADE  all  --  10.0.2.0/24          0.0.0.0/0
+MASQUERADE  all  --  172.18.0.0/16        0.0.0.0/0
+MASQUERADE  all  --  172.17.0.0/16        0.0.0.0/0
+MASQUERADE  tcp  --  10.0.1.2             10.0.1.2             tcp dpt:9292
+
+Chain DOCKER (2 references)
+target     prot opt source               destination
+RETURN     all  --  0.0.0.0/0            0.0.0.0/0
+RETURN     all  --  0.0.0.0/0            0.0.0.0/0
+RETURN     all  --  0.0.0.0/0            0.0.0.0/0
+RETURN     all  --  0.0.0.0/0            0.0.0.0/0
+DNAT       tcp  --  0.0.0.0/0            0.0.0.0/0            tcp dpt:9292 to:10.0.1.2:9292
+```
+Следующие правила отвечают за выдачу трафика контейнера из bridge-сетей.
+```
+MASQUERADE  all  --  10.0.2.0/24          0.0.0.0/0
+MASQUERADE  all  --  172.18.0.0/16        0.0.0.0/0
+MASQUERADE  all  --  172.17.0.0/16        0.0.0.0/0
+```
+Следующее правило отвечает за перенаправление трафика на адреса конкретных контенейров.
+```
+DNAT       tcp  --  0.0.0.0/0            0.0.0.0/0            tcp dpt:9292 to:10.0.1.2:9292
+```
+Выполним команду `ps ax | grep docker-proxy` и убедимся, что запущен процеес docker-proxy, который прослушивает процесс на порту 9292.
+
+4. Создадим файл [src/docker-compose.yml](./src/docker-compose.yml).
+Остановим запущенные ранее контейнеры.
+```
+docker kill $(docker ps -q)
+```
+Выполним следующие команды.
+```
+export USERNAME=rmntrvn
+docker-compose up -d
+docker-compose ps
+```
+После запуска проверим доступность сервисов проекта.
+Файл docker-compose.yml скорректирован. Теперь файл содержит, сети и параметры. Переменные хранятся в файле .env. Имя проекта возможно задать в переменной COMPOSE_PROJECT_NAME.
+
+5. (*) Создан файл [docker-compose.override.yml](./src/docker-compose.override.yml), который позволяет:
+ - Изменять код каждого из приложений, не выполняя сборку образа.
+ - Запускать puma для руби приложений в дебаг режиме с двумя воркерами (флаги `--debug` и `-w 2`).
+
+---
+
 ## Домашняя работа 14 "Docker образы. Микросервисы"
 
 1. Создан Docker host:
