@@ -115,10 +115,72 @@ Please enter the default Docker image (e.g. ruby:2.6):
 alpine:latest
 Runner registered successfully. Feel free to start it, but if it's running already the config should be automatically reloaded!
 ```
-После запуска pipeline должен запуститься.
+После запуска pipeline должен запуститься. Добавим исходный код reddit в репозиторий.
+```
+git clone https://github.com/express42/reddit.git && rm -rf ./reddit/.git
+git add reddit/
+git commit -m “Add reddit app”
+git push gitlab gitlab-ci-1
+```
+6. Изменим описание пайплайна `.gitlab-ci.yml`. После изменений пайплайн будет выглядеть следующим образом.
+```
+images: ruby:2.4.2
 
+stages:
+  - build
+  - test
+  - deploy
 
+variables:
+  DATABASE_URL: 'mongodb://mongo/user_posts'
+  before_script:
+  - cd reddit
+  - bundle install
 
+build_job:
+  stage: build
+  script:
+    - echo 'Building'
+
+test_unit_job:
+  stage: test
+  services:
+    - mongo:latest
+  script:
+    - ruby simpletest.rb
+
+test_integration_job:
+  stage: test
+  script:
+    - echo 'Testing 2'
+
+deploy_job:
+  stage: deploy
+  script:
+    - echo 'Deploy'
+```
+В описании пайплайна добавлен вызов теста скрипта simpletest.rb, который необходимо создать в директории reddit.
+```
+require_relative './app'
+require 'test/unit'
+require 'rack/test'
+
+set :environment, :test
+
+class MyAppTest < Test::Unit::TestCase
+  include Rack::Test::Methods
+
+  def app
+    Sinatra::Application
+  end
+
+  def test_get_request
+    get '/'
+    assert last_response.ok?
+  end
+end
+```
+Добавим `gem 'rak-test'` в файл Gemfile в директории reddit.
 
 
 ---
