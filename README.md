@@ -180,7 +180,37 @@ class MyAppTest < Test::Unit::TestCase
   end
 end
 ```
-Добавим `gem 'rak-test'` в файл Gemfile в директории reddit.
+Добавим `gem 'rack-test'` в файл Gemfile в директории reddit.
+7. Переименуем deploy stage в review, deploy_job заменим на deploy_dev_job и укажем окружение dev.
+```yaml
+deploy_dev_job:
+ stage: review
+ script:
+ - echo 'Deploy'
+ environment:
+ name: dev
+ url: http://dev.example.com
+```
+8. Для staging и production укажем ручной запуск jobs, прописал `when: manual`. Также для stage и production укажем версионирование `only: - /^\d+\.\d+\.\d+/`. Job будет запущен только тогда, когда будет указана версия при пуше. Например:
+```
+git commit -a -m ‘#4 add logout button to profile page’
+git tag 2.4.10
+git push gitlab gitlab-ci-1 --tags
+```
+9. Создадим динамические окружения.
+```
+branch review:
+ stage: review
+ script: echo "Deploy to $CI_ENVIRONMENT_SLUG"
+ environment:
+ name: branch/$CI_COMMIT_REF_NAME
+ url: http://$CI_ENVIRONMENT_SLUG.example.com
+ only:
+ - branches
+ except:
+ - master
+```
+10. (*)
 
 
 ---
