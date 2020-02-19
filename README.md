@@ -1,6 +1,220 @@
 # rmntrvn_microservices
 rmntrvn microservices repository
 
+## Домашняя работа 16 "Устройство Gitlab CI. Построение процесса непрерывной интеграции"
+
+1. Создан Docker host:
+Экспортирован проект.
+```
+export GOOGLE_PROJECT=docker-267008
+```
+Cоздана ВМ с рекомендуемыми параметрами (1vCPU, 3.75GB vRAM, 100GB HDD, Ubuntu 16.04):
+```
+docker-machine create --driver google \
+--google-machine-image https://www.googleapis.com/compute/v1/projects/ubuntu-os-cloud/global/images/ubuntu-1604-xenial-v20200129 \
+--google-machine-type n1-standard-1 \
+--google-disk-size 75 \
+--google-zone europe-west1-b \
+gitlab-ci
+```
+Создано окружение для дальнейшей работы с Docker:
+```
+eval $(docker-machine env gitlab-ci)
+```
+Открывает трафик HTTP/HTTPS для виртуальной машины, подключаемся к docker хосту `docker-machine ssh gitlab-ci` и выполняем команду.
+```
+mkdir -p /srv/gitlab/config /srv/gitlab/data /srv/gitlab/logs
+```
+Переходим в директорию `/src/gitlab/` и создаем *docker-compose.yml* файл.
+```
+web:
+  image: 'gitlab/gitlab-ce:latest'
+  restart: always
+  hostname: 'gitlab.example.com'
+  environment:
+    GITLAB_OMNIBUS_CONFIG: |
+      external_url 'http://104.155.19.233'
+  ports:
+    - '80:80'
+    - '443:443'
+    - '2222:22'
+  volumes:
+    - '/srv/gitlab/config:/etc/gitlab'
+    - '/srv/gitlab/logs:/var/log/gitlab'
+    - '/srv/gitlab/data:/var/opt/gitlab'
+```
+Где `104.155.19.233` - IP виртуальной машины.
+После этого выполняем `docker-compose up -d` и дожидаемся загрузки образа и старта контейнера, и проверяем Gitlab по IP 104.155.19.233. Вводим пароль для пользователя root и выполняем авторизацию. Далее отключаем регистрацию новых пользователей.
+2. Создадим группу проектов *homework* и проект *example*.
+Добавляем удаленный репозиторий.
+```
+git remote add gitlab http://104.155.19.233/homework/example.git
+git push gitlab gitlab-ci-1
+```
+3. Создадим файл `.gitlab-ci.yml` в корне репозитория.
+```
+stages:
+  - build
+  - test
+  - deploy
+
+build_job:
+  stage: build
+  script:
+    - echo 'Building'
+
+test_unit_job:
+  stage: test
+  script:
+    - echo 'Testing 1'
+
+test_integration_job:
+  stage: test
+  script:
+    - echo 'Testing 2'
+
+deploy_job:
+  stage: deploy
+  script:
+    - echo 'Deploy'
+```
+Выполним пуш файла в репозиторий.
+```
+git add .gitlab-ci.yml
+git commit -m 'add pipeline definition'
+git push gitlab gitlab-ci-1
+```
+3. Далее зарегистрируем runner: перейдём в Setting / CI/CD / Runner Setting / Expand / скопируем полученный токен.
+4. Далее выполним команду.
+```
+docker run -d --name gitlab-runner --restart always \
+-v /srv/gitlab-runner/config:/etc/gitlab-runner \
+-v /var/run/docker.sock:/var/run/docker.sock \
+gitlab/gitlab-runner:latest
+```
+5. Далее зарегистрируем runner.
+```
+docker exec -it gitlab-runner gitlab-runner register --run-untagged --locked=false
+```
+```
+Runtime platform                                    arch=amd64 os=linux pid=31 revision=003fe500 version=12.7.1
+Running in system-mode.
+
+Please enter the gitlab-ci coordinator URL (e.g. https://gitlab.com/):
+http://104.155.19.233/
+Please enter the gitlab-ci token for this runner:
+MiwZmZHV1PsUB9tdERn9
+Please enter the gitlab-ci description for this runner:
+[e09c6ddeb3f1]: my-runner
+Please enter the gitlab-ci tags for this runner (comma separated):
+linux,xenial,ubuntu,docker
+Registering runner... succeeded                     runner=MiwZmZHV
+Please enter the executor: docker+machine, docker-ssh+machine, kubernetes, docker, docker-ssh, ssh, virtualbox, custom, parallels, shell:
+docker
+Please enter the default Docker image (e.g. ruby:2.6):
+alpine:latest
+Runner registered successfully. Feel free to start it, but if it's running already the config should be automatically reloaded!
+```
+После запуска pipeline должен запуститься. Добавим исходный код reddit в репозиторий.
+```
+git clone https://github.com/express42/reddit.git && rm -rf ./reddit/.git
+git add reddit/
+git commit -m “Add reddit app”
+git push gitlab gitlab-ci-1
+```
+6. Изменим описание пайплайна `.gitlab-ci.yml`. После изменений пайплайн будет выглядеть следующим образом.
+```
+images: ruby:2.4.2
+
+stages:
+  - build
+  - test
+  - deploy
+
+variables:
+  DATABASE_URL: 'mongodb://mongo/user_posts'
+  before_script:
+  - cd reddit
+  - bundle install
+
+build_job:
+  stage: build
+  script:
+    - echo 'Building'
+
+test_unit_job:
+  stage: test
+  services:
+    - mongo:latest
+  script:
+    - ruby simpletest.rb
+
+test_integration_job:
+  stage: test
+  script:
+    - echo 'Testing 2'
+
+deploy_job:
+  stage: deploy
+  script:
+    - echo 'Deploy'
+```
+В описании пайплайна добавлен вызов теста скрипта simpletest.rb, который необходимо создать в директории reddit.
+```
+require_relative './app'
+require 'test/unit'
+require 'rack/test'
+
+set :environment, :test
+
+class MyAppTest < Test::Unit::TestCase
+  include Rack::Test::Methods
+
+  def app
+    Sinatra::Application
+  end
+
+  def test_get_request
+    get '/'
+    assert last_response.ok?
+  end
+end
+```
+Добавим `gem 'rack-test'` в файл Gemfile в директории reddit.
+7. Переименуем deploy stage в review, deploy_job заменим на deploy_dev_job и укажем окружение dev.
+```yaml
+deploy_dev_job:
+ stage: review
+ script:
+ - echo 'Deploy'
+ environment:
+ name: dev
+ url: http://dev.example.com
+```
+8. Для staging и production укажем ручной запуск jobs, прописал `when: manual`. Также для stage и production укажем версионирование `only: - /^\d+\.\d+\.\d+/`. Job будет запущен только тогда, когда будет указана версия при пуше. Например:
+```
+git commit -a -m ‘#4 add logout button to profile page’
+git tag 2.4.10
+git push gitlab gitlab-ci-1 --tags
+```
+9. Создадим динамические окружения.
+```
+branch review:
+ stage: review
+ script: echo "Deploy to $CI_ENVIRONMENT_SLUG"
+ environment:
+ name: branch/$CI_COMMIT_REF_NAME
+ url: http://$CI_ENVIRONMENT_SLUG.example.com
+ only:
+ - branches
+ except:
+ - master
+```
+10. (*)
+
+
+---
+
 ## Домашняя работа 15 "Сетевое взаимодействие Docker контейнеров. Docker Compose. Тестирование образов"
 
 1. Создан Docker host:
