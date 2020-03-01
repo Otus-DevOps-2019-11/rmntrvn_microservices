@@ -1,0 +1,21 @@
+---
+- name: pack reddit-app into docker
+  hosts: all
+  become: true
+
+  tasks:
+    - debug: msg="This is in {{ env }} environment"
+
+    - name: Install pip
+      apt:
+        name: python-pip
+    - name: Install docker pip module
+      pip:
+        name: docker
+
+    - name: Run docker container reddit
+      docker_container:
+        name: reddit
+        image: rmntrvn/otus-reddit:1.0
+        ports:
+        - "80:9292"
