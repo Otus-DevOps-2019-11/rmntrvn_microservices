@@ -1,0 +1,92 @@
+version: '3.3'
+
+services:
+  post_db:
+    image: mongo:${MONGO_V}
+    volumes:
+      - post_db:/data/db
+    networks:
+      back-net:
+        aliases:
+          - post_db
+          - comment_db
+
+  ui:
+    image: ${USERNAME}/ui:${UI_V}
+    ports:
+      - ${UI_PORT}:${APP_PORT}/tcp
+    networks:
+      front-net:
+        aliases:
+          - ui
+
+  post:
+    image: ${USERNAME}/post:${POST_V}
+    networks:
+      back-net:
+        aliases:
+          - post
+      front-net:
+        aliases:
+          - post
+
+  comment:
+    image: ${USERNAME}/comment:${COMMENT_V}
+    networks:
+       back-net:
+        aliases:
+          - comment
+       front-net:
+        aliases:
+          - comment
+
+  prometheus:
+    image: ${USERNAME}/prometheus
+    ports:
+      - '9090:9090'
+    volumes:
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention=1d'
+    networks:
+      - back-net
+      - front-net
+
+  node-exporter:
+    image: prom/node-exporter:v0.15.2
+    user: root
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.ignored-mount-points="^/(sys|proc|dev|host|etc)($$|/)"'
+    networks:
+      - back-net
+      - front-net
+
+  mongodb-exporter:
+    image: mongodb-exporter:${TAG_MONGODB_EXPORTER}
+    networks:
+      - back-net
+      - front-net
+    environment:
+      MONGODB_URI: ${MONGODB_URI}
+
+  cloudprober:
+    image: ${USERNAME}/cloudprober:${CLOUDPROBER_VERSION}
+    networks:
+      - back-net
+      - front-net
+
+volumes:
+  post_db:
+  prometheus_data:
+
+networks:
+  back-net:
+  front-net:

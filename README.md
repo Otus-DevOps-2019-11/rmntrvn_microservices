@@ -1,6 +1,198 @@
 # rmntrvn_microservices
 rmntrvn microservices repository
 
+## Домашняя работа 17 "Введение в мониторинг. Модели и принципы работы систем мониторинга"
+
+1. Создадим правила для Prometheus и Puma.
+```
+gcloud compute firewall-rules create prometheus-default --allow tcp:9090
+gcloud compute firewall-rules create puma-default --allow tcp:9292
+```
+2. Создадим docker-host в GCE, с использованием docker-machine.
+Экспортирован проект.
+```
+export GOOGLE_PROJECT=docker-267008
+```
+Создана ВМ.
+```
+docker-machine create --driver google \
+--google-machine-image https://www.googleapis.com/compute/v1/projects/ubuntu-os-cloud/global/images/family/ubuntu-1604-lts \
+--google-machine-type n1-standard-1 \
+--google-zone europe-west1-b \
+docker-host
+```
+Создано окружение для дальнейшей работы с Docker:
+```
+eval $(docker-machine env docker-host)
+```
+3. Запустим контейнер Prometheus.
+```
+docker run --rm -p 9090:9090 -d --name prometheus prom/prometheus:v2.1.0
+```
+4. Откроем веб-интерфейс Prometheus `<external_ip_docker_machine>:9090` и установим метрику prometeus_build_info, и нажмем execute, чтобы посмотреть информацию о версии.
+5. В `Status/target` находятся системы за которыми следит Prometheus и собирает с них метрики с помощью pull запросов. По-умолчанию Prometheus опрашивает сам себя и собирает метрики. Чтобы посмотреть информацию, которую собирает Prometheus можно перейти по следующему адресу host_IP:port/metric
+6. Остановим контейнер.
+```
+docker stop prometheus
+```
+Переупорядочим структуру репозитория.
+7. В директории `monitoring/prometheus` создадим файлы [Dockerfile](monitoring/prometheus/Dockerfile) и [prometheus.yml](monitoring/prometheus/prometheus.yml). Перейдем в данную директорию и выполним сборку контейнера.
+```
+export USER_NAME=rmntrvn
+docker build -t $USER_NAME/prometheus .
+```
+8. Выполним сборку образов сервисов из корня репозитория.
+```
+for i in ui post-py comment; do cd src/$i; bash docker_build.sh; cd -; done
+```
+Проверим собранные образы.
+```
+$ docker images
+REPOSITORY           TAG                 IMAGE ID            CREATED             SIZE
+rmntrvn/comment      latest              05c0d584a78d        9 minutes ago       157MB
+rmntrvn/post         latest              e2864b16a589        9 minutes ago       106MB
+rmntrvn/ui           latest              7416a195b32b        10 minutes ago      159MB
+rmntrvn/prometheus   latest              41cf599e3daa        14 minutes ago      112MB
+ruby                 2.2-alpine          d212148e08f7        23 months ago       107MB
+prom/prometheus      v2.1.0              c8ecf7c719c1        2 years ago         112MB
+python               3.6.0-alpine        cb178ebbf0f2        2 years ago         88.6MB
+```
+9. Добавим в файл [docker-compose.yml](docker/docker-compose.yml) сборку сервиса Prometheus и выполним команду `docker-compose up -d`. Проверим доступность Prometheus. В targets сервисы ui и comments должны быть в состояниии UP.
+10. Остановим сервис post `docker-compose stop post`. Проверим состояние ui введя в командной строке `ui_health` и проверим график. На графике отображено падение сервиса. Проверим состояние зависимых сервисов comment и post. При проверке post наблюдаем на графике, что сервис упал. Запустим сервис `docker-composer start post` и проверим его состояние.
+11. Определим сервис node-exporter в [docker-compose.yml](docker/docker-compose.yml) для сбора метрик. Чтобы Prometheus следил за ещё одним сервисом необходимо добавить информацию о сервисе в конфигурацию [prometheus.yml](monitoring/prometheus.yml).
+```
+services:
+...
+  prometheus:
+    image: ${USERNAME}/prometheus
+    ports:
+      - '9090:9090'
+    volumes:
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention=1d'
+
+volumes:
+  prometheus_data:
+```
+Выполним сборку нового обрза Prometheus в директории `monitoring/prometheus`.
+```
+docker build -t $USER_NAME/prometheus .
+```
+12. Пересоздадим сервисы.
+```
+docker-compose down
+docker-compose up -d
+```
+Проверим в веб-интерфейсе Prometheus, что появился новый сервис.
+13. Получим информацию об использовании CPU. Для этого перейдем на хост машину `docker-host ssh docker-host` и выполним команду `yes > /dev/null` и проверим график node_load1. Данный график отображает LA за 1 минуту.
+14. Загрузим все созданные образа в хаб.
+```
+docker push $USER_NAME/ui
+docker push $USER_NAME/comment
+docker push $USER_NAME/post
+docker push $USER_NAME/prometheus
+```
+Ссылка на репозиторий с образами: https://hub.docker.com/u/rmntrvn
+15. (*) Выполним сборку образа экспортера MongoDB от Percona. Команда выполнена в директории `monitoring/`.
+```
+git clone https://github.com/percona/mongodb_exporter.git
+cd mongodb_exporter/
+make docker
+```
+В конфигурацию Prometheus добавим информацию об экспортере mongodb.
+```
+- job_name: 'mongodb-exporter'
+        static_configs:
+          - targets:
+            - 'mongodb-exporter:9216'
+```
+И пересоберем образ `docker build -t $USER_NAME/prometheus .` в директории `monitoring/prometheus`.
+В [docker-compose.yml](docker/docker-compose.yml) добавим информацию о сервисе mongodb-exporter.
+```
+mongodb-exporter:
+    image: mongodb-exporter:${TAG_MONGODB_EXPORTER}
+    networks:
+      - back-net
+      - front-net
+    environment:
+      MONGODB_URI: ${MONGODB_URI}
+```
+Запустим сервисы `docker-compose up -d` и проверим его работу в веб-интерфейсе.
+16. (*) Для реализации данного задания выбран CloudProber.
+Создан [Dockerfile](monitoring/cloud-prober/Dockerfile) для создания образа с конфигурацией CloudProber.
+```
+FROM cloudprober/cloudprober:v0.10.5
+COPY cloudprober.cfg /etc/cloudprober.cfg
+```
+[Конфигурация](monitoring/cloud-prober/cloudprober.cfg) ниже.
+```
+probe {
+  name: "ui"
+  type: HTTP
+  targets {
+    host_names: "ui:9292"
+  }
+  interval_msec: 5000  # 5s
+  timeout_msec: 1000   # 1s
+}
+probe {
+  name: "comment"
+  type: HTTP
+  targets {
+    host_names: "comment:9292"
+  }
+  interval_msec: 5000  # 5s
+  timeout_msec: 1000   # 1s
+}
+probe {
+  name: "post"
+  type: HTTP
+  targets {
+    host_names: "post:5000"
+  }
+  interval_msec: 5000  # 5s
+  timeout_msec: 1000   # 1s
+}
+```
+Для сборки образа написан [скрипт](monitoring/cloud-prober/docker-build.sh). Для образа Prometheus добавлена джоба в [конфиг](monitoring/prometheus/prometheus.yml).
+```
+- job_name: "cloudprober"
+        scrape_interval: 10s
+        static_configs:
+          - targets:
+            - "cloudprober:9313"
+```
+В [docker-compose.yml](docker/docker-compose.yml) добавлен сервис для CloudProber.
+```
+cloudprober:
+    image: ${USERNAME}/cloudprober:${CLOUDPROBER_VERSION}
+    networks:
+      - back-net
+      - front-net
+```
+
+ - В корне репозитория выполним сборку образов comment, post, ui.
+ ```
+ for i in ui post-py comment; do cd src/$i; bash docker_build.sh; cd -; done
+ ```
+ - Выполним сборку образа экспортера MongoDB от Percona. Команда выполнена в директории `monitoring/`.
+ ```
+ git clone https://github.com/percona/mongodb_exporter.git
+ cd mongodb_exporter/
+ make docker
+ ```
+ - Выполним сборку образа Cloud Prober в директории `monitoring/cloud-prober/`.
+ ```
+ bash docker_build.sh
+ ```
+ - Cоберем образ `docker build -t $USER_NAME/prometheus .` в директории `monitoring/prometheus`.
+ - Запустим сервисы `docker-compose up -d` в директории `docker/` и проверим его работу в веб-интерфейсе.
+
+---
+
 ## Домашняя работа 16 "Устройство Gitlab CI. Построение процесса непрерывной интеграции"
 
 1. Создан Docker host:
@@ -210,8 +402,6 @@ branch review:
  except:
  - master
 ```
-10. (*)
-
 
 ---
 
