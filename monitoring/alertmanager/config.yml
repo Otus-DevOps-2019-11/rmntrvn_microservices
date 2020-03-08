@@ -1,0 +1,11 @@
+---
+global:
+  slack_api_url: 'https://hooks.slack.com/services/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'
+
+route:
+  receiver: 'slack-notifications'
+
+receivers:
+- name: 'slack-notifications'
+  slack_configs:
+  - channel: '#roman_travin'
