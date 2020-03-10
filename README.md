@@ -1,6 +1,109 @@
 # rmntrvn_microservices
 rmntrvn microservices repository
 
+## Домашняя работа 18 "Мониторинг приложения и инфраструктуры"
+
+1. Подготовим окружение для работы с Docker.
+Экспортирован проект.
+```
+export GOOGLE_PROJECT=docker-267008
+```
+Создана ВМ.
+```
+docker-machine create --driver google \
+--google-machine-image https://www.googleapis.com/compute/v1/projects/ubuntu-os-cloud/global/images/family/ubuntu-1604-lts \
+--google-machine-type n1-standard-1 \
+--google-zone europe-west1-b \
+docker-host
+```
+Создано окружение для дальнейшей работы с Docker:
+```
+eval $(docker-machine env docker-host)
+```
+2. Создан файл [docker-compose-monitoring.yml](docker/docker-compose-monitoring.yml) для описания сервисов мониторинга и добавлено описание cAdvisor. В [конфигурацию Prometheus](monitoring/prometheus/prometheus.yml) добавлено описание cAdvisor.
+Выполним сборку нового образа Prometheus.
+```
+export USER_NAME=rmntrvn
+docker build -t $USER_NAME/prometheus .
+```
+3. Выполним сборку остальных образов.
+ - В корне репозитория выполним сборку образов comment, post, ui.
+ ```
+ for i in ui post-py comment; do cd src/$i; bash docker_build.sh; cd -; done
+ ```
+ - Выполним сборку образа экспортера MongoDB от Percona. Команда выполнена в директории `monitoring/`.
+ ```
+ git clone https://github.com/percona/mongodb_exporter.git
+ cd mongodb_exporter/
+ make docker
+ ```
+ - Выполним сборку образа Cloud Prober в директории `monitoring/cloud-prober/`.
+ ```
+ bash docker_build.sh
+ ```
+
+Запустим сервисы.
+```
+docker-compose up -d
+docker-compose -f docker-compose-monitoring.yml up -d
+```
+Откроем порт для cAdvisor.
+```
+gcloud compute firewall-rules create cadvisor-default --allow tcp:8080
+```
+Проверим доступность cAdvisor по URL `ext_ip_docker_host:8080`.
+4. Добавим в файл [docker-compose-monitoring.yml](docker/docker-compose-monitoring.yml) сервис Grafana и откроем порт для Grafana.
+```
+gcloud compute firewall-rules create grafana-default --allow tcp:3000
+```
+Запустим новый сервис.
+```
+docker-compose -f docker-compose-monitoring.yml up -d grafana
+```
+Проверим Web интерфейс Grafana по URL `ext_ip_docker_host:3000`, логин и пароль указаны в конфигурационном файле. Создадим подключение к серверу Prometheus и загрузим [.json](https://grafana.com/grafana/dashboards/893) панели с сайта Grafana для мониторинга и разместим его в `monitoring/grafana/dashboards`. Имя файла DockerMonitoring.json.
+Далее импортируем конфигурацию панели в Grafana. После чего должен появится набор графиков.
+5. Добавим в конфигурацию prometheus информацию о сборе метрик сервиса Post и пересоберем образ.
+```
+export USER_NAME=rmntrvn
+docker build -t $USER_NAME/prometheus .
+```
+Пересоздади мониторинг инфраструктуру.
+```
+docker-compose -f docker-compose-monitoring.yml down
+docker-compose -f docker-compose-monitoring.yml up -d
+```
+И создадим несколько постов в приложении. После чего создадим панель в Grafana для отображения метрик.
+Созданы графики для мониторинга ui_request_count и rate(ui_request_count{http_status=~"^[45].*"}[1m]). Также создан график для отображение 95 перцентиля HTTP запросов. Файл [.json](monitoring/grafana/UI_Service_Monitoring.json).
+6. Для мониторинга бизнес-логики будет отслеживать количество постов и комментариев.
+Созданы 2 графика post_count и comment_count, конфигурция панели созданены в [Business_Logic_Monitoring.json](monitoring/grafana/Business_Logic_Monitoring.json).
+7. Для AlertManager создан [Dockerfile](monitoring/alertmanager/Dockerfile) для сборки образа с конфигурацией. Для Prometheus создана конфигурация алертов [alerts.yml](monitoring/prometheus/alerts.yml), модифицирован [Dockerfile](monitoring/prometheus/Dockerfile) для загрузки конфигурации алертов и модифицирован [prometheus.yml](monitoring/prometheus/prometheus.yml).
+Приложение для Webhook настраивается по инструкции: https://api.slack.com/messaging/webhooks
+Соберем образ AlertManager.
+```
+monitoring/alertmanager $ docker build -t $USER_NAME/alertmanager .
+```
+Соберем образ Prometheus.
+```
+monitoring/prometheus $ docker build -t $USER_NAME/prometheus .
+```
+Отроем доступ для web-интерфейса AlertManager.
+```
+gcloud compute firewall-rules create alertmanager-default --allow tcp:9093
+```
+Пересоздадим инфраструктуру мониторинга.
+```
+docker-compose -f docker-compose-monitoring.yml down
+docker-compose -f docker-compose-monitoring.yml up -d
+```
+Остановим сервис для проверки работы уведомлений.
+```
+docker-compose stop post
+```
+Проверяем уведомлением в Slack.
+Образы загружены: https://hub.docker.com/u/rmntrvn
+
+---
+
 ## Домашняя работа 17 "Введение в мониторинг. Модели и принципы работы систем мониторинга"
 
 1. Создадим правила для Prometheus и Puma.
