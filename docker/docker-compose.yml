@@ -1,7 +1,8 @@
-version: '3.3'
+version: '3.5'
 
 services:
   post_db:
+    container_name: post_db
     image: mongo:${MONGO_V}
     volumes:
       - post_db:/data/db
@@ -14,6 +15,7 @@ services:
           - comment_db
 
   ui:
+    container_name: ui
     image: ${USERNAME}/ui:${UI_V}
     environment:
       - POST_SERVICE_HOST=post
@@ -36,6 +38,7 @@ services:
         tag: service.ui
 
   post:
+    container_name: post
     image: ${USER_NAME}/post:${POST_V}
     environment:
       - POST_DATABASE_HOST=post_db
@@ -59,7 +62,8 @@ services:
         tag: service.post
 
   comment:
-    image: ${USERNAME}/comment:${COMMENT_V}
+    container_name: comment
+    image: ${USER_NAME}/comment:${COMMENT_V}
     environment:
       - ZIPKIN_ENABLED=${ZIPKIN_ENABLED}
     networks:
