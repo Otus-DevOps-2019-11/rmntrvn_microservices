@@ -1,6 +1,167 @@
 # rmntrvn_microservices
 rmntrvn microservices repository
 
+## Домашнаяя работа 19 "Применение системы логирования в инфраструктуре на основе Docker"
+
+1. Подготовим окружение для работы с Docker.
+Экспортирован проект.
+```
+export GOOGLE_PROJECT=docker-267008
+```
+Создана ВМ.
+```
+docker-machine create --driver google \
+--google-machine-image https://www.googleapis.com/compute/v1/projects/ubuntu-os-cloud/global/images/family/ubuntu-1604-lts \
+--google-machine-type n1-standard-1 \
+--google-open-port 5601/tcp \
+--google-open-port 9292/tcp \
+--google-open-port 9411/tcp \
+logging
+```
+Создано окружение для дальнейшей работы с Docker:
+```
+eval $(docker-machine env logging)
+```
+2. Обновляем код микровервисов. В директории **src** выполним следующую команду.
+```
+git clone -b logging https://github.com/express42/reddit.git
+```
+3. Выполним сборку образов из корня репозитория.
+```
+export USER_NAME=rmntrvn
+for i in ui post-py comment; do cd src/$i; bash docker_build.sh; cd -; done
+```
+4. Создадим отдельный compose-файл [docker-compose-logging.yml](docker/docker-compose-logging.yml)  для системы логирования. Создадим директорию logging/fluentd, в которой создадим [Dockerfile](logging/fluentd/Dockerfile) для сборки образа Fluentd. В той же директории logging/fluentd создадим файл конфигурации [fluentd.conf](logging/fluentd/fluent.conf)
+Выполним сборку образа Fluentd.
+```
+docker build -t $USER_NAME/fluentd .
+```
+Изменим теги приложения на logging в файле [.env](docker/.env) и выполним приложение.
+```
+docker-compose up -d
+```
+Запустим проверку логов контейнера и проверим доступ приложения.
+```
+docker-compose logs -f post
+```
+Каждое событие логируется в формата JSON и имеет нужную структуру.
+5. Отправим полученные логи во Fluentd. Определим драйвер логирования в [docker-compose.yml](docker/docker-compose.yml) файле.
+```
+  post:
+    image: ${USER_NAME}/post
+    networks:
+      back-net:
+        aliases:
+          - post
+      front-net:
+        aliases:
+          - post
+    environment:
+      - POST_DATABASE_HOST=post_db
+      - POST_DATABASE=posts
+    depends_on:
+      - post_db
+    ports:
+      - "5000:5000"
+    logging:
+      driver: "fluentd"
+      options:
+        fluentd-address: localhost:24224
+        tag: service.post
+```
+Перезапустим приложение и запустим структуру логирования.
+```
+docker-compose down
+docker-compose -f docker-compose-logging.yml up -d
+docker-compose up -d
+```
+Откроем необходимые порты.
+```
+gcloud compute firewall-rules create kibana-default --allow tcp:5601
+gcloud compute firewall-rules create elastic-default --allow tcp:9200
+gcloud compute firewall-rules create fluentd-tcp-default --allow tcp:24224
+gcloud compute firewall-rules create fluentd-udp-default --allow udp:24224
+```
+Подключимся к web-интерфейсу Kibana на порт 5601 и выполним настройки Kibana для отображение лога Fluentd: Discover / Configure an index pattern fluentd-* / Next / Time Filter field name @timestamp / Next / Discover
+Для парсинга логов .json добавим в [fluent.conf](logging/fluent.conf) следующую информацию.
+```
+<filter service.post>
+  @type parser
+  format json
+  key_name log
+</filter>
+```
+После чего пересоберем образ Fluentd и перезапустим сервисы логирования.
+```
+logging/fluentd $ docker build -t $USER_NAME/fluentd .
+docker/ $ docker-compose -f docker-compose-logging.yml up -d fluentd
+```
+Создадим несколько новых постов и проверим парсинг логов.
+6. Определим в [docker-compose.yml](docker/docker-compose.yml) для UI сервиса драйвер для логирования неструктурированных логов в Fluentd.
+```
+  ui:
+    image: ${USERNAME}/ui:${UI_V}
+    environment:
+      - POST_SERVICE_HOST=post
+      - POST_SERVICE_PORT=5000
+      - COMMENT_SERVICE_HOST=comment
+      - COMMENT_SERVICE_PORT=9292
+    ports:
+      - ${UI_PORT}:${APP_PORT}/tcp
+    depends_on:
+      - post
+    networks:
+      front-net:
+        aliases:
+          - ui
+    logging:
+      driver: "fluentd"
+      options:
+        fluentd-address: localhost:24224
+        tag: service.ui
+```
+Перезапустим сервис UI.
+```
+docker-compose stop ui
+docker-compose rm ui
+docker-compose up -d
+```
+Проверим формат собираемых сообщений. Некоторые данные остались нераспаршенными. Используем регулярные выражения для парсинга оставшихся данных. Внесем в [fluent.conf](logging/fluentd/fluent.conf) следующую информацию.
+```
+<filter service.ui>
+  @type parser
+  format /\[(?<time>[^\]]*)\]  (?<level>\S+) (?<user>\S+)[\W]*service=(?<service>\S+)[\W]*event=(?<event>\S+)[\W]*(?:path=(?<path>\S+)[\W]*)?request_id=(?<request_id>\S+)[\W]*(?:remote_addr=(?<remote_addr>\S+)[\W]*)?(?:method= (?<method>\S+)[\W]*)?(?:response_status=(?<response_status>\S+)[\W]*)?(?:message='(?<message>[^\']*)[\W]*)?/
+  key_name log
+</filter>
+```
+Пересобираем образ.
+```
+logging/fluentd $ docker build -t $USER_NAME/fluentd .
+```
+Рестартуем сервисы логирования.
+```
+docker-compose -f docker-compose-logging.yml down
+docker-compose -f docker-compose-logging.yml up -d
+```
+Также возможно использовать grok-шаблоны. Grok-шаблоны - это именованные шаблоны для парсинга
+
+7. Создадим сервис распределенного трейсинга zipkin. Скорректируем файлы [docker-compose.yml](docker/docker-compose.yml) и [docker-compose-logging.yml](docker/docker-compose-logging.yml).
+Перезапустим сервисы.
+```
+docker-compose -f docker-compose-logging.yml down
+docker-compose down
+docker-compose -f docker-compose-logging.yml up -d
+docker-compose up -d
+```
+Откроем порт 9411 для Zipkin.
+```
+gcloud compute firewall-rules create zipkin-default --allow tcp:9411
+```
+Зайдем в web-интерфейс Zipkin. Синие полоски со временем называются *span* и представляют собой одну операцию, которая произошла при обработке запроса. Набор span-ов называется *трейсом*. Суммарное время обработки нашего запроса равно верхнему *span*'у, который включает в себя время всех *span*'ов, расположенных под ним.
+
+
+---
+
 ## Домашняя работа 18 "Мониторинг приложения и инфраструктуры"
 
 1. Подготовим окружение для работы с Docker.
