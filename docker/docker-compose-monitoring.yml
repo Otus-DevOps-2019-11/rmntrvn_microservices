@@ -88,4 +88,6 @@ volumes:
 
 networks:
   back-net:
+    external: true
   front-net:
+    external: true
