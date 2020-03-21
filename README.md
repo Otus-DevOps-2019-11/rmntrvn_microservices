@@ -1,6 +1,130 @@
 # rmntrvn_microservices
 rmntrvn microservices repository
 
+## Домашняя работа 20 "Введение в Kubernetes"
+
+1. Созданы манифесты для разворачивания pods: [post-deployment.yml](kubernetes/reddit/post-deployment.yml), [comment-deployment.yml](kubernetes/reddit/comment-deployment.yml), [ui-deployment.yml](kubernetes/reddit/ui-deployment.yml), [mongo-deployment.yml](kubernetes/reddit/mongo-deployment.yml).
+
+2. Пройдена ручная установка Kubernetes [The HardWay](https://github.com/kelseyhightower/kubernetes-the-hard-way):
+   1. Установлены [клиентские инструменты](https://github.com/kelseyhightower/kubernetes-the-hard-way/blob/master/docs/02-client-tools.md):
+   - cfssl и cfssljson для управления ключами и генерации TLS сертификатов
+   - kubectl для взаимодействия с сервером Kubernetes API
+   2. Установлены регион и зона [по-умолчанию](https://github.com/kelseyhightower/kubernetes-the-hard-way/blob/master/docs/01-prerequisites.md#set-a-default-compute-region-and-zone) и экспортирован проект `export GOOGLE_PROJECT=docker-267008`.
+   3. Создана [виртуальная сеть](https://github.com/kelseyhightower/kubernetes-the-hard-way/blob/master/docs/03-compute-resources.md).
+   ```
+   gcloud compute networks create kubernetes-the-hard-way --subnet-mode custom
+   ```
+   Зададим подсеть:
+   ```
+   gcloud compute networks subnets create kubernetes \
+   --network kubernetes-the-hard-way \
+   --range 10.240.0.0/24
+   ```
+   4. Создадим правило проброса трафика.
+   ```
+   gcloud compute firewall-rules create kubernetes-the-hard-way-allow-internal \
+   --allow tcp,udp,icmp \
+   --network kubernetes-the-hard-way \
+   --source-ranges 10.240.0.0/24,10.200.0.0/16
+   ```
+   Создадим правило для внешнего подключения.
+   ```
+   gcloud compute firewall-rules create kubernetes-the-hard-way-allow-external \
+   --allow tcp:22,tcp:6443,icmp \
+   --network kubernetes-the-hard-way \
+   --source-ranges 0.0.0.0/0
+   ```
+   Проверим созданные правила.
+   ```
+   gcloud compute firewall-rules list --filter="network:kubernetes-the-hard-way"
+
+   NAME                                    NETWORK                  DIRECTION  PRIORITY  ALLOW                 DENY  DISABLED
+   kubernetes-the-hard-way-allow-external  kubernetes-the-hard-way  INGRESS    1000      tcp:22,tcp:6443,icmp        False
+   kubernetes-the-hard-way-allow-internal  kubernetes-the-hard-way  INGRESS    1000      tcp,udp,icmp                False
+   ```
+   5. Установим публичный IP адрес для балансировщика Kubernetes API.
+   ```
+   gcloud compute addresses create kubernetes-the-hard-way \
+   --region $(gcloud config get-value compute/region)
+   ```
+   Проверим адрес.
+   ```
+   gcloud compute addresses list --filter="name=('kubernetes-the-hard-way')"
+   ```
+   6. Создадим кластер Kubernetes контроллера:
+   ```
+   for i in 0 1 2; do
+   gcloud compute instances create controller-${i} \
+    --async \
+    --boot-disk-size 200GB \
+    --can-ip-forward \
+    --image-family ubuntu-1804-lts \
+    --image-project ubuntu-os-cloud \
+    --machine-type n1-standard-1 \
+    --private-network-ip 10.240.0.1${i} \
+    --scopes compute-rw,storage-ro,service-management,service-control,logging-write,monitoring \
+    --subnet kubernetes \
+    --tags kubernetes-the-hard-way,controller
+   done
+   ```
+   Создадим ноды Workers.
+   ```
+   for i in 0 1 2; do
+   gcloud compute instances create worker-${i} \
+    --async \
+    --boot-disk-size 200GB \
+    --can-ip-forward \
+    --image-family ubuntu-1804-lts \
+    --image-project ubuntu-os-cloud \
+    --machine-type n1-standard-1 \
+    --metadata pod-cidr=10.200.${i}.0/24 \
+    --private-network-ip 10.240.0.2${i} \
+    --scopes compute-rw,storage-ro,service-management,service-control,logging-write,monitoring \
+    --subnet kubernetes \
+    --tags kubernetes-the-hard-way,worker
+    done
+   ```
+   Так как для бесплатного аккаунта доступны 4 внешних IP адреса для 1 региона, то будет создан 1 воркер. Проверим список нод.
+   ```
+   gcloud compute instances list
+   ```
+  7. Проверим подключение к контроллеру по ssh.
+  ```
+  gcloud compute ssh controller-0
+  ```
+  Будет сгенерирован ключ для подключения и сохранен в `~/.ssh/`.
+  8. Согласно [инструкции](https://github.com/express42/kubernetes-the-hard-way/blob/master/docs/04-certificate-authority.md) сгенерированы следующие ключи и сертификаты.
+   - Сгенерированы CA и приватный ключ сохранены в [kubernetes/the_hard_way](kubernetes/the_hard_way).
+   - Сгенерирован сертификат и приватный ключ для пользователя admin. Сохранены в [kubernetes/the_hard_way](kubernetes/the_hard_way).
+   - Сгенерирован клиентский Kubelet сертификат. Сохранен в [kubernetes/the_hard_way](kubernetes/the_hard_way).
+   - Сгенерирован kube-controller-manager сертификат и приватный ключ. Сохранено в [kubernetes/the_hard_way](kubernetes/the_hard_way).
+   - Сгенерирован kube-proxy клиент-сертификат и приватный ключ. Сохранено в [kubernetes/the_hard_way](kubernetes/the_hard_way).
+   - Сгенерирован kube-scheduler клиентский сертификат и приватный ключ. Сохранено в [kubernetes/the_hard_way](kubernetes/the_hard_way).
+   - Сгенерирован Kubernetes API Server клиент-сертификат и приватный ключ. Сохранено в [kubernetes/the_hard_way](kubernetes/the_hard_way).
+   - Сгенерирован сертификат и ключ сервисного аккаунта. Сохранено в [kubernetes/the_hard_way](kubernetes/the_hard_way).
+   - Скопируем необходимые сертификаты и приватные ключи на каждую Worker ноду.
+   ```
+   for instance in worker-0; do
+   gcloud compute scp ca.pem ${instance}-key.pem $ {instance}.pem ${instance}:~/
+   done
+   ```
+   - Скопируем необходимые сертификаты и приватные ключи на кажду controller ноду.
+   ```
+   for instance in controller-0 controller-1 controller-2; do
+   gcloud compute scp ca.pem ca-key.pem kubernetes-key.pem kubernetes.pem \
+    service-account-key.pem service-account.pem ${instance}:~/
+   done
+   ```
+  9. Сгенерируем конфигурационные файлы Kubernetes для аутентификации согласно [инструкции](https://github.com/express42/kubernetes-the-hard-way/blob/master/docs/05-kubernetes-configuration-files.md).
+  10. Сгенерируем конфигурации и ключ шифрования данных согласно [инструкции](https://github.com/express42/kubernetes-the-hard-way/blob/master/docs/06-data-encryption-keys.md).
+  11. Создадим кластер с тремя etcd нодами согласно [инструкции](https://github.com/express42/kubernetes-the-hard-way/blob/master/docs/07-bootstrapping-etcd.md).
+  12. Установим Kubernetes Control Plane согласно [инструкции](https://github.com/express42/kubernetes-the-hard-way/blob/master/docs/08-bootstrapping-kubernetes-controllers.md)
+  13. Сконфигурируем kubectl для удаленного доступа согласно [инструкции](https://github.com/express42/kubernetes-the-hard-way/blob/master/docs/10-configuring-kubectl.md).
+  14. Настроим маршруты для pods согласно [инструкции](https://github.com/express42/kubernetes-the-hard-way/blob/master/docs/11-pod-network-routes.md).
+  15. Развернем дополнение [DNS-кластера](https://github.com/express42/kubernetes-the-hard-way/blob/master/docs/12-dns-addon.md).
+
+3. После выполненной работы выполним удаление кластера Kubernetes по [инструкции](https://github.com/express42/kubernetes-the-hard-way/blob/master/docs/14-cleanup.md).
+
 ## Домашнаяя работа 19 "Применение системы логирования в инфраструктуре на основе Docker"
 
 1. Подготовим окружение для работы с Docker.
