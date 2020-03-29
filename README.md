@@ -1,6 +1,82 @@
 # rmntrvn_microservices
 rmntrvn microservices repository
 
+## Домашняя работа 21 "Основные модели безопасности и контроллеры в Kubernetes"
+
+1. Установлен Minikube и запущен на локальной машине.
+```
+$ kubectl get nodes
+NAME   STATUS   ROLES    AGE     VERSION
+m01    Ready    master   5m56s   v1.17.3
+```
+Конфигурация kubectl - это контекст, который состоит из:
+ - *cluster* - API сервер
+ - *user* - пользователь для подключения к кластеру
+ - *namespace* область видимости (не обязательно, по-умолчанию default)
+Информация о контексте сохранена в ~/.kube/config
+
+Кластер (cluster) содержит:
+ - *server* - адрес kubernetes API сервера
+ - *certificate-authority* - корневой сертификат, которым подписан SSL-сертификат самого сервера, чтобы убедиться, что нас не обманывают и перед нами необходимый сервер
+ - *name* - имя для идентификации в конфиге
+
+Пользователь (user) содержит:
+ - Данные для аутентификации. Это могут быть : username + password (Basic Auth), client key + client certificate, token, auth-provider config (например GCP)
+ - *name* (имя) для идентификации в конфигурации
+
+2. Созданы манифесты приложения reddit:
+ - [comment-deployment.yml](kubernetes/reddit/comment-deployment.yml)
+ - [ui-deployment.yml](kubernetes/reddit/ui-deployment.yml)
+ - [post-deployment.yml](kubernetes/reddit/post-deployment.yml)
+ - [mongo-deployment.yml](kubernetes/reddit/mongo-deployment.yml)
+Для связи сервисов приложений между собой созданы файлы сервисов:
+ - [ui-service.yml](kubernetes/reddit/ui-service.yml)
+ - [comment-service.yml](kubernetes/reddit/comment-service.yml)
+ - [post-service.yml](kubernetes/reddit/post-service.yml)
+ - [comment-mongodb-service.yml](kubernetes/reddit/comment-mongodb-service.yml)
+Создано окружение dev.
+ - [dev-namespace.yml](kubernetes/reddit/dev-namespace.yml)
+3. После того, как рабочая среда на тестовом окружении готова, развернем приложение в GKE. После запуска кластера убедимся, что используем правильный контекст.
+```
+$ kubectl config current-context
+gke_docker-267008_us-central1-a_cluster-1
+```
+Cоздадим namespace dev и задеплоим компоненты.
+```
+kubectl apply -f ./kubernetes/reddit/dev-namespace.yml
+kubectl apply -f ./kubernetes/reddit/ -n dev
+```
+Создадим правило брандмауэра, чтобы открыть диапазон портов для публикации сервисов.
+```
+gcloud compute --project=docker-267008 firewall-rules create kube-reddit --direction=INGRESS --priority=1000 --network=default --action=ALLOW --rules=tcp:30000-32768 --source-ranges=0.0.0.0/0
+```
+Определим внешний IP любой из нод кластера.
+```
+kubectl get nodes -o wide
+```
+Найдём порт публикации сервиса UI.
+```
+$ kubectl describe service ui -n dev | grep NodePort
+Type:                     NodePort
+NodePort:                 <unset>  32015/TCP
+```
+Переходим по адресу `node_ip:NodePort` и проверяем работу приложения.
+![Test](kubernetes/reddit/2020-03-22_23-29.png)
+4. В настройках кластера GKE разрешаем использование Dashboard и настроиваем сервисный аккаунт следующей командой.
+```
+kubectl create clusterrolebinding kubernetes-dashboard  --clusterrole=cluster-admin --serviceaccount=kube-system:kubernetes-dashboard
+```
+После чего открываем панель:
+```
+kubectl proxy
+```
+И переходим по адресу:
+```
+http://localhost:8001/ui
+```
+
+---
+
 ## Домашняя работа 20 "Введение в Kubernetes"
 
 1. Созданы манифесты для разворачивания pods: [post-deployment.yml](kubernetes/reddit/post-deployment.yml), [comment-deployment.yml](kubernetes/reddit/comment-deployment.yml), [ui-deployment.yml](kubernetes/reddit/ui-deployment.yml), [mongo-deployment.yml](kubernetes/reddit/mongo-deployment.yml).
