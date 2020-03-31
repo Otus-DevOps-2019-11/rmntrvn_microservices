@@ -1,6 +1,15 @@
 # rmntrvn_microservices
 rmntrvn microservices repository
 
+## Домашняя работа 22 "Ingress-контроллеры и сервисы в Kubernetes"
+
+1. Произведены эксперименты с kube-dns.
+2. Использована балансировка с Service LoadBalancing.
+3. Использована балансировка с Ingress.
+4. Установлен SSL для HTTPS.
+5. Установлен Network Policy для MongoDB.
+6. Использована и проверена работа с PersistenceVolumes и DynamicPersistenceVolumes.
+
 ## Домашняя работа 21 "Основные модели безопасности и контроллеры в Kubernetes"
 
 1. Установлен Minikube и запущен на локальной машине.
