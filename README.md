@@ -1,6 +1,12 @@
 # rmntrvn_microservices
 rmntrvn microservices repository
 
+## Домашняя работа 23 "Интеграция Kubernetes в GitlabCI"
+
+1. Создан кластер GKE сначала из 3-х нод, потом +1 узел.
+2. Созданы helm charts для компонент приложения.
+3. Созданы pipeline для разворачивания приложения в GitlabCI.
+
 ## Домашняя работа 22 "Ingress-контроллеры и сервисы в Kubernetes"
 
 1. Произведены эксперименты с kube-dns.
