@@ -1,6 +1,64 @@
 # rmntrvn_microservices
 rmntrvn microservices repository
 
+## Домашняя работа 24 "Kubernetes. Мониторинг и логирование"
+
+1. Загружен chart для prometheus.
+2. Создан файл [custom_values.yaml](kubernetes/Charts/prometheus/custom_values.yaml) для кастомизации установки prometheus.
+3. Установлен Prometheus:
+```
+helm upgrade prom . -f custom_values.yml --install
+```
+4. Включен сбор информации о сущностях Kubernetes.
+```
+kubeStateMetrics:
+  ## If false, kube-state-metrics will not be installed
+  ##
+  enabled: true
+```
+Обновлен релиз.
+```
+helm upgrade prom . -f custom_values.yml --install
+```
+Аналогично включен под Node-exporter.
+```
+nodeExporter:
+  ## If false, node-exporter will not be installed
+  ##
+  enabled: true
+```
+И обновлен релиз.
+5. Запущено приложение reddit из chart.
+```
+helm upgrade reddit-test ./reddit —install
+helm upgrade production --namespace production ./reddit --install
+helm upgrade staging --namespace staging ./reddit —install
+```
+6. Модернизирован конфиг [custom_values.yaml](kubernetes/Charts/prometheus/custom_values.yaml) для обнаружения приложений Kubernetes.
+```
+      - job_name: 'reddit-endpoints'
+        kubernetes_sd_configs:
+          - role: endpoints
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_label_app]
+            action: keep
+            regex: reddit
+```
+Обновим конфигурацию:
+```
+helm upgrade prom . -f custom_values.yml --install
+```
+7. Установим Grafana.
+```
+helm upgrade --install grafana stable/grafana --set "adminPassword=admin" \
+--set "service.type=NodePort" \
+--set "ingress.enabled=true" \
+--set "ingress.hosts={reddit-grafana}"
+```
+8. Добавим Prometheus data-source `http://prom-prometheus-server` и добавим [dashboard](https://grafana.com/grafana/dashboards/315) для отслеживания состояния ресурсов Kubernetes. Настроен templating.
+9. Импортирован [график](https://grafana.com/grafana/dashboards/741)
+
+
 ## Домашняя работа 23 "Интеграция Kubernetes в GitlabCI"
 
 1. Создан кластер GKE сначала из 3-х нод, потом +1 узел.
